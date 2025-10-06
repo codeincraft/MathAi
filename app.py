@@ -14,7 +14,7 @@ st.title("⚡ Fast AI Math & Knowledge Assistant")
 # -------------------- API KEY --------------------
 groq_api_key = st.sidebar.text_input("🔑 Enter Groq API Key", type="password")
 if not groq_api_key:
-    st.warning("Please enter your Groq API Key to continue.")
+    st.warning("Please enter your API Key to continue.")
     st.stop()
 
 # -------------------- MODEL --------------------
