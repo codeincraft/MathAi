@@ -9,7 +9,7 @@ from langchain.callbacks import StreamlitCallbackHandler
 
 # -------------------- CONFIG --------------------
 st.set_page_config(page_title="AI Math & Knowledge Assistant", page_icon="🧮")
-st.title("⚡ Fast AI Math & Knowledge Assistant (Gemma 2 + Groq)")
+st.title("⚡ Fast AI Math & Knowledge Assistant")
 
 # -------------------- API KEY --------------------
 groq_api_key = st.sidebar.text_input("🔑 Enter Groq API Key", type="password")
