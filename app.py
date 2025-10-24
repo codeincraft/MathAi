@@ -1,7 +1,7 @@
 import streamlit as st
 import numexpr as ne
 from langchain_groq import ChatGroq
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain.agents import Tool, initialize_agent, AgentType
 from langchain_community.utilities import WikipediaAPIWrapper
