@@ -2,9 +2,11 @@ import streamlit as st
 import numexpr as ne
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-from langchain.agents import Tool, initialize_agent, AgentType
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.tools import Tool
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain.callbacks import StreamlitCallbackHandler
+from langchain import hub
 
 # -------------------- CONFIG --------------------
 st.set_page_config(page_title="AI Math & Knowledge Assistant", page_icon="🧮")
@@ -59,7 +61,6 @@ prompt = PromptTemplate(
     ),
 )
 
-# Create reasoning chain using modern syntax
 reasoning_chain = prompt | llm
 
 def reasoning_func(question: str) -> str:
@@ -77,13 +78,21 @@ reasoning_tool = Tool(
 )
 
 # -------------------- AGENT --------------------
-assistant = initialize_agent(
-    tools=[calculator, wikipedia_tool, reasoning_tool],
-    llm=llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+tools = [calculator, wikipedia_tool, reasoning_tool]
+
+# Get the ReAct prompt template
+react_prompt = hub.pull("hwchase17/react")
+
+# Create the agent
+agent = create_react_agent(llm, tools, react_prompt)
+
+# Create the agent executor
+assistant = AgentExecutor(
+    agent=agent,
+    tools=tools,
     handle_parsing_errors=True,
     max_iterations=2,
-    early_stopping_method="generate",
+    verbose=True
 )
 
 # -------------------- CHAT --------------------
@@ -103,9 +112,10 @@ if question := st.chat_input("Type your question here..."):
     with st.chat_message("assistant"), st.spinner("Thinking... ⚡"):
         try:
             cb = StreamlitCallbackHandler(st.container())
-            response = assistant.run(question, callbacks=[cb])
+            response = assistant.invoke({"input": question}, callbacks=[cb])
+            answer = response["output"]
         except Exception as e:
-            response = f"⚠️ Error: {e}"
+            answer = f"⚠️ Error: {e}"
         
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.write(response)
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.write(answer)
