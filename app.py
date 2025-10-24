@@ -1,8 +1,7 @@
 import streamlit as st
 import numexpr as ne
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.prompts import PromptTemplate
 from langchain.agents import Tool, initialize_agent, AgentType
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain.callbacks import StreamlitCallbackHandler
@@ -21,17 +20,17 @@ if not groq_api_key:
 llm = ChatGroq(
     groq_api_key=groq_api_key,
     model_name="llama-3.1-8b-instant",
-    temperature=0.2,           # reduce creativity for factual accuracy
-    max_tokens=512,            # limit response length
+    temperature=0.2,
+    max_tokens=512,
 )
 
 # -------------------- TOOLS --------------------
 def fast_math_solver(question: str) -> str:
     """Extracts and evaluates math expressions quickly."""
     try:
-        expr = llm.predict(
+        expr = llm.invoke(
             f"Extract only the pure math expression from this question:\n{question}"
-        ).strip()
+        ).content.strip()
         result = ne.evaluate(expr)
         return f"✅ {expr} = {result.item()}"
     except Exception as e:
@@ -59,11 +58,21 @@ prompt = PromptTemplate(
         "Question: {question}\nAnswer:"
     ),
 )
-reasoning_chain = LLMChain(llm=llm, prompt=prompt)
+
+# Create reasoning chain using modern syntax
+reasoning_chain = prompt | llm
+
+def reasoning_func(question: str) -> str:
+    """Provides reasoning for questions."""
+    try:
+        response = reasoning_chain.invoke({"question": question})
+        return response.content
+    except Exception as e:
+        return f"⚠️ Reasoning error: {e}"
 
 reasoning_tool = Tool(
     name="Reasoning",
-    func=reasoning_chain.run,
+    func=reasoning_func,
     description="Provides short reasoning and final answer.",
 )
 
@@ -73,14 +82,14 @@ assistant = initialize_agent(
     llm=llm,
     agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
     handle_parsing_errors=True,
-    max_iterations=2,      # prevent multiple loops
+    max_iterations=2,
     early_stopping_method="generate",
 )
 
 # -------------------- CHAT --------------------
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "👋 Hi, I’m your fast AI assistant! Ask me any math or knowledge question."}
+        {"role": "assistant", "content": "👋 Hi, I'm your fast AI assistant! Ask me any math or knowledge question."}
     ]
 
 for msg in st.session_state.messages:
@@ -90,13 +99,13 @@ for msg in st.session_state.messages:
 if question := st.chat_input("Type your question here..."):
     st.session_state.messages.append({"role": "user", "content": question})
     st.chat_message("user").write(question)
-
+    
     with st.chat_message("assistant"), st.spinner("Thinking... ⚡"):
         try:
             cb = StreamlitCallbackHandler(st.container())
             response = assistant.run(question, callbacks=[cb])
         except Exception as e:
             response = f"⚠️ Error: {e}"
-
+        
         st.session_state.messages.append({"role": "assistant", "content": response})
         st.write(response)
