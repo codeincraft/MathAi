@@ -1,21 +1,18 @@
 import streamlit as st
 import numexpr as ne
 from langchain_groq import ChatGroq
-from langchain_core.prompts import PromptTemplate
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.tools import Tool
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
 from langchain_community.utilities import WikipediaAPIWrapper
-from langchain.callbacks import StreamlitCallbackHandler
-from langchain import hub
 
 # -------------------- CONFIG --------------------
 st.set_page_config(page_title="AI Math & Knowledge Assistant", page_icon="🧮")
 st.title("⚡ Fast AI Math & Knowledge Assistant")
 
 # -------------------- API KEY --------------------
-groq_api_key = st.sidebar.text_input("🔑 Enter API Key", type="password")
+groq_api_key = st.sidebar.text_input("🔑 Enter Groq API Key", type="password")
 if not groq_api_key:
-    st.warning("Please enter your API Key to continue.")
+    st.warning("Please enter your Groq API Key to continue.")
     st.stop()
 
 # -------------------- MODEL --------------------
@@ -27,78 +24,65 @@ llm = ChatGroq(
 )
 
 # -------------------- TOOLS --------------------
-def fast_math_solver(question: str) -> str:
-    """Extracts and evaluates math expressions quickly."""
+@tool
+def calculator(expression: str) -> str:
+    """Evaluates mathematical expressions. Input should be a valid Python math expression like '2+2' or '10*5+3'."""
     try:
-        expr = llm.invoke(
-            f"Extract only the pure math expression from this question:\n{question}"
-        ).content.strip()
-        result = ne.evaluate(expr)
-        return f"✅ {expr} = {result.item()}"
+        result = ne.evaluate(expression)
+        return f"✅ {expression} = {result}"
     except Exception as e:
-        return f"⚠️ Could not compute. Error: {e}"
+        return f"⚠️ Could not compute. Error: {str(e)}"
 
-calculator = Tool(
-    name="Calculator",
-    func=fast_math_solver,
-    description="Solves simple or compound math expressions quickly.",
-)
-
-wikipedia_tool = Tool(
-    name="Wikipedia",
-    func=WikipediaAPIWrapper().run,
-    description="Searches Wikipedia for factual information.",
-)
-
-# reasoning tool
-prompt = PromptTemplate(
-    input_variables=["question"],
-    template=(
-        "Answer the question clearly in 2 short steps:\n"
-        "1️⃣ Explain briefly (max 2 sentences)\n"
-        "2️⃣ Give final answer.\n\n"
-        "Question: {question}\nAnswer:"
-    ),
-)
-
-reasoning_chain = prompt | llm
-
-def reasoning_func(question: str) -> str:
-    """Provides reasoning for questions."""
+@tool
+def wikipedia_search(query: str) -> str:
+    """Searches Wikipedia for factual information. Input should be a search query."""
     try:
-        response = reasoning_chain.invoke({"question": question})
+        wiki = WikipediaAPIWrapper()
+        result = wiki.run(query)
+        return result[:500]  # Limit to 500 chars
+    except Exception as e:
+        return f"⚠️ Wikipedia search failed: {str(e)}"
+
+# -------------------- SIMPLE AGENT LOGIC --------------------
+def process_question(question: str) -> str:
+    """Process user question using simple routing logic."""
+    
+    # Check if it's a math question
+    math_keywords = ['calculate', 'solve', 'compute', '+', '-', '*', '/', 'math', 'equation']
+    if any(keyword in question.lower() for keyword in math_keywords):
+        # Extract math expression
+        try:
+            prompt = f"Extract ONLY the mathematical expression from this question. Return just the numbers and operators, nothing else:\n{question}"
+            response = llm.invoke(prompt)
+            expr = response.content.strip()
+            return calculator.invoke(expr)
+        except:
+            pass
+    
+    # Check if it's a factual/Wikipedia question
+    wiki_keywords = ['who is', 'what is', 'when was', 'where is', 'tell me about', 'information about']
+    if any(keyword in question.lower() for keyword in wiki_keywords):
+        try:
+            return wikipedia_search.invoke(question)
+        except:
+            pass
+    
+    # Default: Use LLM for reasoning
+    try:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a helpful AI assistant. Answer questions clearly and concisely in 2-3 sentences."),
+            ("user", "{question}")
+        ])
+        chain = prompt | llm
+        response = chain.invoke({"question": question})
         return response.content
     except Exception as e:
-        return f"⚠️ Reasoning error: {e}"
-
-reasoning_tool = Tool(
-    name="Reasoning",
-    func=reasoning_func,
-    description="Provides short reasoning and final answer.",
-)
-
-# -------------------- AGENT --------------------
-tools = [calculator, wikipedia_tool, reasoning_tool]
-
-# Get the ReAct prompt template
-react_prompt = hub.pull("hwchase17/react")
-
-# Create the agent
-agent = create_react_agent(llm, tools, react_prompt)
-
-# Create the agent executor
-assistant = AgentExecutor(
-    agent=agent,
-    tools=tools,
-    handle_parsing_errors=True,
-    max_iterations=2,
-    verbose=True
-)
+        return f"⚠️ Error processing question: {str(e)}"
 
 # -------------------- CHAT --------------------
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "👋 Hi, I'm your fast AI assistant! Ask me any math or knowledge question."}
+        {"role": "assistant", "content": "👋 Hi! I'm your AI assistant. I can help with:\n- Math calculations\n- Wikipedia facts\n- General questions"}
     ]
 
 for msg in st.session_state.messages:
@@ -109,13 +93,12 @@ if question := st.chat_input("Type your question here..."):
     st.session_state.messages.append({"role": "user", "content": question})
     st.chat_message("user").write(question)
     
-    with st.chat_message("assistant"), st.spinner("Thinking... ⚡"):
-        try:
-            cb = StreamlitCallbackHandler(st.container())
-            response = assistant.invoke({"input": question}, callbacks=[cb])
-            answer = response["output"]
-        except Exception as e:
-            answer = f"⚠️ Error: {e}"
-        
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-        st.write(answer)
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking... ⚡"):
+            try:
+                response = process_question(question)
+            except Exception as e:
+                response = f"⚠️ Error: {str(e)}"
+            
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.write(response)
