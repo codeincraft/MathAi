@@ -1,7 +1,8 @@
 streamlit
-numexpr
 langchain
-langchain-core
-langchain-community
 langchain-groq
+langchain-community
+langchain-core
+numexpr
 wikipedia
+langchainhub
